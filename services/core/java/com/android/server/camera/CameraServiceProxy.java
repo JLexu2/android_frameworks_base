@@ -73,8 +73,6 @@ public class CameraServiceProxy extends SystemService
 
     public static final String CAMERA_SERVICE_PROXY_BINDER_NAME = "media.camera.proxy";
 
-    public static final String FACESENSE_CLIENT_NAME = "co.aospa.facesense";
-
     // Flags arguments to NFC adapter to enable/disable NFC
     public static final int DISABLE_POLLING_FLAGS = 0x1000;
     public static final int ENABLE_POLLING_FLAGS = 0x0000;
@@ -139,9 +137,6 @@ public class CameraServiceProxy extends SystemService
     private long mClosedEvent;
 
     private boolean mHasPopupCamera;
-    private String mClientName;
-
-    private final boolean mAllowMediaUid;
 
     private AlertDialog mAlertDialog;
 
@@ -220,8 +215,7 @@ public class CameraServiceProxy extends SystemService
     private final ICameraServiceProxy.Stub mCameraServiceProxy = new ICameraServiceProxy.Stub() {
         @Override
         public void pingForUserUpdate() {
-            if (Binder.getCallingUid() != Process.CAMERASERVER_UID
-                    && (!mAllowMediaUid || Binder.getCallingUid() != Process.MEDIA_UID)) {
+            if (Binder.getCallingUid() != Process.CAMERASERVER_UID) {
                 Slog.e(TAG, "Calling UID: " + Binder.getCallingUid() + " doesn't match expected " +
                         " camera service UID!");
                 return;
@@ -232,8 +226,7 @@ public class CameraServiceProxy extends SystemService
         @Override
         public void notifyCameraState(String cameraId, int newCameraState, int facing,
                 String clientName, int apiLevel) {
-            if (Binder.getCallingUid() != Process.CAMERASERVER_UID
-                    && (!mAllowMediaUid || Binder.getCallingUid() != Process.MEDIA_UID)) {
+            if (Binder.getCallingUid() != Process.CAMERASERVER_UID) {
                 Slog.e(TAG, "Calling UID: " + Binder.getCallingUid() + " doesn't match expected " +
                         " camera service UID!");
                 return;
@@ -248,7 +241,6 @@ public class CameraServiceProxy extends SystemService
             if (facing == ICameraServiceProxy.CAMERA_FACING_FRONT && mHasPopupCamera) {
                 switch (newCameraState) {
                    case ICameraServiceProxy.CAMERA_STATE_OPEN : {
-                       mClientName = clientName;
                        if (SystemClock.elapsedRealtime() - mClosedEvent < CAMERA_EVENT_DELAY_TIME) {
                            mHandler.removeMessages(MSG_CAMERA_CLOSED);
                        }
@@ -276,8 +268,6 @@ public class CameraServiceProxy extends SystemService
         }
         mNotifyNfc = notifyNfc;
         if (DEBUG) Slog.v(TAG, "Notify NFC state is " + nfcNotifyToString(mNotifyNfc));
-        mAllowMediaUid = mContext.getResources().getBoolean(
-                com.android.internal.R.bool.config_allowMediaUidForCameraServiceProxy);
     }
 
     @Override
@@ -288,35 +278,33 @@ public class CameraServiceProxy extends SystemService
             } break;
             case MSG_CAMERA_CLOSED: {
                 sendCameraStateIntent("0");
-                if (mAlertDialog != null && mAlertDialog.isShowing()) {
+                if (mAlertDialog.isShowing()) {
                     mAlertDialog.dismiss();
                 }
             } break;
             case MSG_CAMERA_OPENED: {
-                if (mScreenOn || mClientName.equals(FACESENSE_CLIENT_NAME)) {
-                    sendCameraStateIntent("1");
-                } else {
-                    if (mAlertDialog == null) {
-                        mAlertDialog = new AlertDialog.Builder(mContext)
-                            .setMessage(com.android.internal.R.string.popup_camera_dialog_message)
-                            .setNegativeButton(com.android.internal.R.string
-                                    .popup_camera_dialog_no, (dialog, which) -> {
-                                // Go back to home screen
-                                Intent intent = new Intent(Intent.ACTION_MAIN);
-                                intent.addCategory(Intent.CATEGORY_HOME);
-                                intent.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
-                                mContext.startActivity(intent);
-                            })
-                            .setPositiveButton(com.android.internal.R.string
-                                    .popup_camera_dialog_raise, (dialog, which) -> {
-                                // Raise the camera
-                                sendCameraStateIntent("1");
-                            })
-                            .create();
-                        mAlertDialog.getWindow().setType(WindowManager.LayoutParams.TYPE_SYSTEM_ERROR);
-                        mAlertDialog.setCanceledOnTouchOutside(false);
-                    }
+                if (mAlertDialog == null) {
+                    mAlertDialog = new AlertDialog.Builder(mContext)
+                        .setMessage(com.android.internal.R.string.popup_camera_dialog_message)
+                        .setNegativeButton(com.android.internal.R.string.popup_camera_dialog_no, (dialog, which) -> {
+                            // Go back to home screen
+                            Intent intent = new Intent(Intent.ACTION_MAIN);
+                            intent.addCategory(Intent.CATEGORY_HOME);
+                            intent.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+                            mContext.startActivity(intent);
+                        })
+                        .setPositiveButton(com.android.internal.R.string.popup_camera_dialog_raise, (dialog, which) -> {
+                            // Raise the camera
+                            sendCameraStateIntent("1");
+                        })
+                        .create();
+                    mAlertDialog.getWindow().setType(WindowManager.LayoutParams.TYPE_SYSTEM_ERROR);
+                    mAlertDialog.setCanceledOnTouchOutside(false);
+                }
+                if (!mScreenOn) {
                     mAlertDialog.show();
+                } else {
+                    sendCameraStateIntent("1");
                 }
             } break;
             case MSG_SCREEN_ON: {

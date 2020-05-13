@@ -267,7 +267,10 @@ public class KeyguardUpdateMonitor implements TrustManager.TrustListener {
     private boolean mLogoutEnabled;
     // If the user long pressed the lock icon, disabling face auth for the current session.
     private boolean mLockIconPressed;
+
     private int mActiveMobileDataSubscription = SubscriptionManager.INVALID_SUBSCRIPTION_ID;
+
+    private final boolean mFaceAuthOnlyOnSecurityView;
 
     /**
      * Short delay before restarting biometric authentication after a successful try
@@ -408,7 +411,7 @@ public class KeyguardUpdateMonitor implements TrustManager.TrustListener {
                     updateTelephonyCapable((boolean) msg.obj);
                     break;
                 case MSG_POCKET_STATE_CHANGED:
-                    updateBiometricListeningState();
+                    updateFingerprintListeningState();
                     break;
                 default:
                     super.handleMessage(msg);
@@ -1570,6 +1573,8 @@ public class KeyguardUpdateMonitor implements TrustManager.TrustListener {
         mSubscriptionManager = SubscriptionManager.from(context);
         mDeviceProvisioned = isDeviceProvisionedInSettingsDb();
         mStrongAuthTracker = new StrongAuthTracker(context, this::notifyStrongAuthStateChanged);
+        mFaceAuthOnlyOnSecurityView = mContext.getResources().getBoolean(
+                R.bool.config_faceAuthOnlyOnSecurityView);
 
         // Since device can't be un-provisioned, we only need to register a content observer
         // to update mDeviceProvisioned when we are...
@@ -1779,7 +1784,7 @@ public class KeyguardUpdateMonitor implements TrustManager.TrustListener {
      * If face auth is allows to scan on this exact moment.
      */
     public boolean shouldListenForFace() {
-        final boolean awakeKeyguard = mKeyguardIsVisible && mDeviceInteractive && !mGoingToSleep;
+        boolean awakeKeyguard = mKeyguardIsVisible && mDeviceInteractive && !mGoingToSleep;
         final int user = getCurrentUser();
         final int strongAuth = mStrongAuthTracker.getStrongAuthForUser(user);
         final boolean isLockOutOrLockDown =
@@ -1803,6 +1808,11 @@ public class KeyguardUpdateMonitor implements TrustManager.TrustListener {
                 && !isLockOutOrLockDown;
 
         boolean unlockPossible = true;
+        if ((!mBouncer || !awakeKeyguard) && mFaceAuthOnlyOnSecurityView){
+            unlockPossible = false;
+        }
+
+        boolean unlockPossible = true;
         if ((!mBouncer || !awakeKeyguard) && isFaceAuthOnlyOnSecurityView()){
             unlockPossible = false;
         }
@@ -1813,7 +1823,8 @@ public class KeyguardUpdateMonitor implements TrustManager.TrustListener {
                 && !mSwitchingUser && !isFaceDisabled(user) && becauseCannotSkipBouncer
                 && !mKeyguardGoingAway && mFaceSettingEnabledForUser.get(user) && !mLockIconPressed
                 && strongAuthAllowsScanning && mIsPrimaryUser
-                && !mSecureCameraLaunched && !mIsDeviceInPocket && unlockPossible;
+                && !mSecureCameraLaunched && !mIsDeviceInPocket
+                && unlockPossible;
     }
 
     /**
